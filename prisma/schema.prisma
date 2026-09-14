@@ -1,0 +1,217 @@
+// Daowa POS — Prisma schema (SQLite)
+
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Product {
+  id         String      @id @default(cuid())
+  name       String
+  barcode    String?     @unique
+  category   String?
+  generic    String?
+  unitPrice  Float
+  costPrice  Float?
+  stock      Int         @default(0)
+  unit       String      @default("pcs")
+  image      String?
+  batchNo    String?
+  expiryDate DateTime?
+  createdAt  DateTime    @default(now())
+
+  saleItems SaleItem[]
+  returns   Return[]
+}
+
+model Sale {
+  id                String                 @id @default(cuid())
+  invoiceNo         String                  @unique
+  customerId        String?
+  subtotal          Float
+  totalDiscount     Float                  @default(0)
+  discountType      String                 @default("percentage")
+  discountValue     Float                  @default(0)
+  deliveryCharge    Float                  @default(0)
+  roundingAdjust    Float                  @default(0)
+  grandTotal        Float
+  paymentMethod     String
+  receivedAmount    Float                  @default(0)
+  changeAmount      Float                  @default(0)
+  dueAmount         Float                  @default(0)
+  status            String                 @default("completed")
+  isDelivery        Boolean                @default(false)
+  deliveryPartnerId String?
+  clearingStatus    String                 @default("N/A")
+  createdAt         DateTime               @default(now())
+
+  customer          Customer?              @relation("CustomerSales", fields: [customerId], references: [id], onDelete: SetNull)
+  saleItems         SaleItem[]
+  splitPayments     SplitPayment[]
+  journalEntries    JournalEntry[]
+  settlementItems   SettlementItem[]
+  returns           Return[]
+  deliveryPartner   PaymentProviderConfig? @relation("SaleDeliveryPartner", fields: [deliveryPartnerId], references: [id], onDelete: SetNull)
+}
+
+model SaleItem {
+  id               String  @id @default(cuid())
+  saleId           String
+  productId        String
+  productName      String
+  unitPrice        Float
+  quantity         Int
+  unit             String
+  itemDiscount     Float   @default(0)
+  itemDiscountType String  @default("percentage")
+  subtotal         Float
+
+  sale    Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  returns Return[]
+}
+
+model SplitPayment {
+  id     String @id @default(cuid())
+  saleId String
+  method String
+  amount Float
+
+  sale Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+}
+
+model Customer {
+  id            String   @id @default(cuid())
+  name          String
+  phone         String   @unique
+  email         String?
+  address       String?
+  loyaltyPoints Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  sales Sale[] @relation("CustomerSales")
+}
+
+model HoldOrder {
+  id             String   @id @default(cuid())
+  customerName   String   @default("Walk-in")
+  customerPhone  String?
+  itemsJson      String
+  discountType   String   @default("percentage")
+  discountValue  Float    @default(0)
+  deliveryCharge Float    @default(0)
+  note           String?
+  createdAt      DateTime @default(now())
+}
+
+model Return {
+  id           String   @id @default(cuid())
+  saleId       String
+  saleItemId   String
+  productId    String?
+  productName  String
+  quantity     Int
+  unitPrice    Float
+  refundAmount Float
+  reason       String
+  status       String   @default("processed")
+  createdAt    DateTime @default(now())
+
+  sale     Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  saleItem SaleItem @relation(fields: [saleItemId], references: [id], onDelete: Cascade)
+  product  Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+}
+
+model Shift {
+  id           String    @id @default(cuid())
+  cashierName  String    @default("Admin")
+  openingCash  Float     @default(0)
+  note         String?
+  closingCash  Float?
+  totalSales   Int?
+  totalRevenue Float?
+  status       String
+  openedAt     DateTime  @default(now())
+  closedAt     DateTime?
+}
+
+model JournalEntry {
+  id           String   @id @default(cuid())
+  saleId       String?
+  clearingId   String?
+  settlementId String?
+  accountType  String
+  entryType    String
+  amount       Float
+  description  String
+  createdAt    DateTime @default(now())
+
+  sale       Sale?             @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  clearing   ClearingAccount?  @relation(fields: [clearingId], references: [id], onDelete: Cascade)
+  settlement Settlement?       @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+}
+
+model ClearingAccount {
+  id               String   @id @default(cuid())
+  providerConfigId String
+  name             String
+  accountCode      String
+  pendingBalance   Float    @default(0)
+  settledBalance   Float    @default(0)
+  createdAt        DateTime @default(now())
+
+  providerConfig PaymentProviderConfig @relation(fields: [providerConfigId], references: [id], onDelete: Cascade)
+  settlements    Settlement[]
+  journalEntries JournalEntry[]
+}
+
+model Settlement {
+  id                String    @id @default(cuid())
+  clearingAccountId String
+  providerConfigId  String
+  amount            Float
+  status            String
+  reference         String?
+  note              String?
+  settledAt         DateTime?
+  createdAt         DateTime  @default(now())
+
+  clearingAccount ClearingAccount       @relation(fields: [clearingAccountId], references: [id], onDelete: Cascade)
+  providerConfig  PaymentProviderConfig @relation(fields: [providerConfigId], references: [id], onDelete: Cascade)
+  items           SettlementItem[]
+  journalEntries  JournalEntry[]
+}
+
+model SettlementItem {
+  id            String @id @default(cuid())
+  settlementId  String
+  saleId        String
+  saleAmount    Float
+  serviceCharge Float
+  netAmount     Float
+  status        String
+
+  settlement Settlement @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+  sale       Sale       @relation(fields: [saleId], references: [id], onDelete: Cascade)
+}
+
+model PaymentProviderConfig {
+  id                 String   @id @default(cuid())
+  name               String   @unique
+  code               String   @unique
+  type               String   @default("mfs")
+  serviceCharge      Float    @default(0)
+  minCharge          Float    @default(0)
+  settlementInterval String   @default("manual")
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+
+  clearingAccounts        ClearingAccount[]
+  settlements             Settlement[]
+  salesAsDeliveryPartner   Sale[]            @relation("SaleDeliveryPartner")
+}
