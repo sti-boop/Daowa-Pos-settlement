@@ -54,6 +54,7 @@ export async function POST(req: NextRequest) {
           groupName: body.name,
           openingBalance: 0,
           balanceType,
+          isActive: true,
         },
       });
     } catch {

@@ -14,7 +14,12 @@ export type AppView =
   | 'voucher-list'
   | 'stock-groups'
   | 'stock-items'
-  | 'audit';
+  | 'audit'
+  | 'receivables'
+  | 'fixed-assets'
+  | 'purchases'
+  | 'bank-reconciliation'
+  | 'year-end';
 
 export type ReportType =
   | 'trial-balance'

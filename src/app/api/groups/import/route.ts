@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from 'next/server';
 const VALID_NATURES = ['Asset', 'Liability', 'Equity', 'Income', 'Expense'];
 const VALID_CLASSIFICATIONS = ['Balance Sheet', 'Profit & Loss'];
 const VALID_SUB_CATEGORIES = [
-  'Current', 'Long-Term', 'Bank', 'Cash', 'Inventory',
+  'Current', 'Long-Term', 'Bank', 'Cash', 'Inventory', 'Clearing',
   'Fixed Asset', 'Equipment', 'Fixtures',
   'Payables', 'Taxes', 'Accrued', 'Loans',
   'Equity', 'Capital', 'Earnings', 'Drawings',
@@ -292,6 +292,24 @@ export async function POST(req: NextRequest) {
             notes: row.notes || '',
           },
         });
+
+        // Auto-create a ledger account for this COA account (same name),
+        // so every imported COA account is immediately usable in vouchers.
+        const balanceType = ['Asset', 'Expense'].includes(row.nature) ? 'Dr' : 'Cr';
+        try {
+          await db.ledger.create({
+            data: {
+              name: row.name,
+              groupName: row.name,
+              openingBalance: 0,
+              balanceType,
+              isActive: true,
+            },
+          });
+        } catch {
+          // Ledger creation is best-effort (e.g. duplicate name)
+        }
+
         created++;
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : 'Database error';

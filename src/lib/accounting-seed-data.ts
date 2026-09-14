@@ -1,6 +1,13 @@
 // Daowa Accounting — default seed data (Chart of Accounts, voucher types, ledgers, stock)
 // Shared by the in-memory accounting engine (src/lib/accounting-db.ts) and the seed endpoint.
-
+//
+// The COA is designed around the actual Daowa business flow:
+//   POS sales  →  clearing accounts (cash / MFS merchant / card / courier / rider)
+//   clearing   →  bank / vault settlement (fees recognised here)
+//   accounting →  sales voucher (SV) + COGS + inventory, journal (JV) for settlements.
+//
+// Every LEAF group below has a matching ledger in DEFAULT_LEDGERS (the "create a COA
+// account → auto-create its ledger" rule is enforced by /api/groups and /api/groups/import).
 
 export const DEFAULT_GROUPS = [
 
@@ -16,13 +23,15 @@ export const DEFAULT_GROUPS = [
 
   { name: 'Mobile Banking (bKash/Nagad/Rocket)', code: '1130', parentName: 'Current Assets', nature: 'Asset', classification: 'Balance Sheet', subCategory: 'Bank', affectsGrossProfit: false, isReserved: true, notes: '' },
 
-  { name: 'Inventory (Stock in Hand)', code: '1140', parentName: 'Current Assets', nature: 'Asset', classification: 'Balance Sheet', subCategory: 'Inventory', affectsGrossProfit: true, isReserved: true, notes: '' },
+  { name: 'Clearing Accounts', code: '1140', parentName: 'Current Assets', nature: 'Asset', classification: 'Balance Sheet', subCategory: 'Clearing', affectsGrossProfit: false, isReserved: true, notes: 'Funds in transit — card gateway, MFS merchant, courier COD and rider collections pending bank/vault settlement' },
 
   { name: 'Receivables (Money to Receive)', code: '1150', parentName: 'Current Assets', nature: 'Asset', classification: 'Balance Sheet', subCategory: 'Current', affectsGrossProfit: false, isReserved: true, notes: '' },
 
-  { name: 'Advance to Staff, Suppliers & Other', code: '1160', parentName: 'Current Assets', nature: 'Asset', classification: 'Balance Sheet', subCategory: 'Current', affectsGrossProfit: false, isReserved: true, notes: '' },
+  { name: 'Inventory (Stock in Hand)', code: '1160', parentName: 'Current Assets', nature: 'Asset', classification: 'Balance Sheet', subCategory: 'Inventory', affectsGrossProfit: false, isReserved: true, notes: '' },
 
-  { name: 'Prepaid Expenses', code: '1170', parentName: 'Current Assets', nature: 'Asset', classification: 'Balance Sheet', subCategory: 'Current', affectsGrossProfit: false, isReserved: true, notes: '' },
+  { name: 'Advance to Staff, Suppliers & Other', code: '1170', parentName: 'Current Assets', nature: 'Asset', classification: 'Balance Sheet', subCategory: 'Current', affectsGrossProfit: false, isReserved: true, notes: '' },
+
+  { name: 'Prepaid Expenses', code: '1180', parentName: 'Current Assets', nature: 'Asset', classification: 'Balance Sheet', subCategory: 'Current', affectsGrossProfit: false, isReserved: true, notes: '' },
 
   { name: 'Fixed Assets (Long-term Property)', code: '1500', isPrimary: true, nature: 'Asset', classification: 'Balance Sheet', subCategory: 'Fixed Asset', affectsGrossProfit: false, isReserved: true, notes: '' },
 
@@ -97,7 +106,7 @@ export const DEFAULT_GROUPS = [
   { name: 'Other Income', code: '4540', parentName: 'Indirect Income (Other Income)', nature: 'Income', classification: 'Profit & Loss', subCategory: '-', affectsGrossProfit: false, isReserved: true, notes: '' },
 
   // ============================================================
-  // 5-xx  EXPENSES
+  // 5-xx  COST OF GOODS SOLD (direct / affects gross profit)
   // ============================================================
 
   { name: 'Cost of Goods Sold (Direct Expenses)', code: '5000', isPrimary: true, nature: 'Expense', classification: 'Profit & Loss', subCategory: 'Cost of Sales', affectsGrossProfit: true, isReserved: true, notes: '' },
@@ -110,7 +119,9 @@ export const DEFAULT_GROUPS = [
 
   { name: 'Damaged / Expired Stock Loss', code: '5130', parentName: 'Cost of Goods Sold (Direct Expenses)', nature: 'Expense', classification: 'Profit & Loss', subCategory: 'Wastage', affectsGrossProfit: true, isReserved: true, notes: '' },
 
-  { name: 'Delivery & Packaging Cost', code: '5140', parentName: 'Cost of Goods Sold (Direct Expenses)', nature: 'Expense', classification: 'Profit & Loss', subCategory: 'Distribution', affectsGrossProfit: true, isReserved: true, notes: '' },
+  // ============================================================
+  // 5-xx  INDIRECT EXPENSES (overhead)
+  // ============================================================
 
   { name: 'Indirect Expenses (Overhead)', code: '5500', isPrimary: true, nature: 'Expense', classification: 'Profit & Loss', subCategory: 'Operating Exp', affectsGrossProfit: false, isReserved: true, notes: '' },
 
@@ -144,11 +155,15 @@ export const DEFAULT_GROUPS = [
 
   { name: 'Miscellaneous Expenses', code: '5650', parentName: 'Indirect Expenses (Overhead)', nature: 'Expense', classification: 'Profit & Loss', subCategory: '-', affectsGrossProfit: false, isReserved: true, notes: '' },
 
-  { name: 'bKash/Nagad Cash Out Charges', code: '5660', parentName: 'Indirect Expenses (Overhead)', nature: 'Expense', classification: 'Profit & Loss', subCategory: '-', affectsGrossProfit: false, isReserved: true, notes: '' },
+  { name: 'bKash/Nagad Cash Out Charges', code: '5660', parentName: 'Indirect Expenses (Overhead)', nature: 'Expense', classification: 'Profit & Loss', subCategory: 'Bank', affectsGrossProfit: false, isReserved: true, notes: '' },
 
   { name: 'Discount Allowed', code: '5670', parentName: 'Indirect Expenses (Overhead)', nature: 'Expense', classification: 'Profit & Loss', subCategory: '-', affectsGrossProfit: false, isReserved: true, notes: '' },
 
   { name: 'Round Off', code: '5680', parentName: 'Indirect Expenses (Overhead)', nature: 'Expense', classification: 'Profit & Loss', subCategory: '-', affectsGrossProfit: false, isReserved: true, notes: '' },
+
+  { name: 'Delivery & Packaging Cost', code: '5690', parentName: 'Indirect Expenses (Overhead)', nature: 'Expense', classification: 'Profit & Loss', subCategory: 'Distribution', affectsGrossProfit: false, isReserved: true, notes: 'Courier/COD commissions, packaging and rider fuel (selling & distribution cost)' },
+
+  { name: 'Cash Shortage / Overage', code: '5700', parentName: 'Indirect Expenses (Overhead)', nature: 'Expense', classification: 'Profit & Loss', subCategory: 'Operating Exp', affectsGrossProfit: false, isReserved: true, notes: 'Register till discrepancies at EOD' },
 ];
 
 // ============================================================
@@ -167,37 +182,52 @@ export const DEFAULT_VOUCHER_TYPES = [
 ];
 
 // ============================================================
-// LEDGERS — One per leaf COA group
+// LEDGERS — one per LEAF COA group (auto-created with the COA)
 // ============================================================
 
 export const DEFAULT_LEDGERS = [
-  // === 1-01 Current Assets ===
+  // === Cash In Hand ===
   { name: 'Counter Cash', groupName: 'Cash In Hand', openingBalance: 0, balanceType: 'Dr' },
   { name: 'Cash in Safe/Vault', groupName: 'Cash In Hand', openingBalance: 0, balanceType: 'Dr' },
   { name: 'Petty Cash', groupName: 'Cash In Hand', openingBalance: 0, balanceType: 'Dr' },
 
+  // === Cash at Bank ===
+  { name: 'MTB Bank', groupName: 'Cash at Bank', openingBalance: 0, balanceType: 'Dr' },
+  { name: 'BRAC Bank', groupName: 'Cash at Bank', openingBalance: 0, balanceType: 'Dr' },
   { name: 'City Bank', groupName: 'Cash at Bank', openingBalance: 0, balanceType: 'Dr' },
-  { name: 'Dutch-Bangla Bank', groupName: 'Cash at Bank', openingBalance: 0, balanceType: 'Dr' },
-  { name: 'Islami Bank', groupName: 'Cash at Bank', openingBalance: 0, balanceType: 'Dr' },
 
+  // === Mobile Banking (merchant wallets) ===
   { name: 'bKash Merchant', groupName: 'Mobile Banking (bKash/Nagad/Rocket)', openingBalance: 0, balanceType: 'Dr' },
   { name: 'Nagad Merchant', groupName: 'Mobile Banking (bKash/Nagad/Rocket)', openingBalance: 0, balanceType: 'Dr' },
   { name: 'Rocket Merchant', groupName: 'Mobile Banking (bKash/Nagad/Rocket)', openingBalance: 0, balanceType: 'Dr' },
+  { name: 'Upay Merchant', groupName: 'Mobile Banking (bKash/Nagad/Rocket)', openingBalance: 0, balanceType: 'Dr' },
 
+  // === Clearing Accounts (funds in transit) ===
+  { name: 'Card Clearing A/c', groupName: 'Clearing Accounts', openingBalance: 0, balanceType: 'Dr' },
+  { name: 'Daowa Rider Clearing A/c', groupName: 'Clearing Accounts', openingBalance: 0, balanceType: 'Dr' },
+  { name: 'Steadfast Clearing A/c', groupName: 'Clearing Accounts', openingBalance: 0, balanceType: 'Dr' },
+  { name: 'Pathao Clearing A/c', groupName: 'Clearing Accounts', openingBalance: 0, balanceType: 'Dr' },
+  { name: 'RedX Clearing A/c', groupName: 'Clearing Accounts', openingBalance: 0, balanceType: 'Dr' },
+  { name: 'Carrybee Clearing A/c', groupName: 'Clearing Accounts', openingBalance: 0, balanceType: 'Dr' },
+  { name: 'Paperfly Clearing A/c', groupName: 'Clearing Accounts', openingBalance: 0, balanceType: 'Dr' },
+
+  // === Receivables ===
+  { name: 'Customer Accounts Receivable', groupName: 'Receivables (Money to Receive)', openingBalance: 0, balanceType: 'Dr' },
+
+  // === Inventory ===
   { name: 'Medicine Stock', groupName: 'Inventory (Stock in Hand)', openingBalance: 0, balanceType: 'Dr' },
   { name: 'Healthcare Products Stock', groupName: 'Inventory (Stock in Hand)', openingBalance: 0, balanceType: 'Dr' },
   { name: 'General Items Stock', groupName: 'Inventory (Stock in Hand)', openingBalance: 0, balanceType: 'Dr' },
 
-  { name: 'Customer A', groupName: 'Receivables (Money to Receive)', openingBalance: 0, balanceType: 'Dr' },
-  { name: 'Customer B', groupName: 'Receivables (Money to Receive)', openingBalance: 0, balanceType: 'Dr' },
-
+  // === Advance to Staff / Suppliers ===
   { name: 'Staff Advance', groupName: 'Advance to Staff, Suppliers & Other', openingBalance: 0, balanceType: 'Dr' },
   { name: 'Supplier Advance', groupName: 'Advance to Staff, Suppliers & Other', openingBalance: 0, balanceType: 'Dr' },
 
+  // === Prepaid Expenses ===
   { name: 'Prepaid Rent', groupName: 'Prepaid Expenses', openingBalance: 0, balanceType: 'Dr' },
   { name: 'Prepaid Insurance', groupName: 'Prepaid Expenses', openingBalance: 0, balanceType: 'Dr' },
 
-  // === 1-02 Fixed Assets ===
+  // === Fixed Assets ===
   { name: 'Shop Land & Building', groupName: 'Land & Building', openingBalance: 0, balanceType: 'Dr' },
 
   { name: 'Display Racks', groupName: 'Furniture & Fixtures', openingBalance: 0, balanceType: 'Dr' },
@@ -216,7 +246,7 @@ export const DEFAULT_LEDGERS = [
 
   { name: 'Accumulated Depreciation A/c', groupName: 'Accumulated Depreciation', openingBalance: 0, balanceType: 'Cr' },
 
-  // === 2-01 Current Liabilities ===
+  // === Current Liabilities ===
   { name: 'Square Pharmaceuticals', groupName: 'Payables (Money to Pay)', openingBalance: 0, balanceType: 'Cr' },
   { name: 'Beximco Pharma', groupName: 'Payables (Money to Pay)', openingBalance: 0, balanceType: 'Cr' },
   { name: 'Incepta Pharmaceuticals', groupName: 'Payables (Money to Pay)', openingBalance: 0, balanceType: 'Cr' },
@@ -232,16 +262,19 @@ export const DEFAULT_LEDGERS = [
 
   { name: 'Customer Advance A', groupName: 'Advance from Customers', openingBalance: 0, balanceType: 'Cr' },
 
-  // === 2-02 Long-term Liabilities ===
+  // === Long-term Liabilities ===
   { name: 'Business Loan', groupName: 'Bank Loan', openingBalance: 0, balanceType: 'Cr' },
   { name: 'Personal Loan Received', groupName: 'Loans from Others', openingBalance: 0, balanceType: 'Cr' },
 
-  // === 3-01 Capital ===
-  { name: "Owner's Capital A/c", groupName: "Owner's Capital", openingBalance: 500000, balanceType: 'Cr' },
+  // === Capital ===
+  // Opening capital is established automatically by the opening-stock posting
+  // (Dr Inventory / Cr Owner's Capital) in the POS→Accounting sync bridge, so
+  // the static opening balance stays 0 to keep the trial balance in equilibrium.
+  { name: "Owner's Capital A/c", groupName: "Owner's Capital", openingBalance: 0, balanceType: 'Cr' },
   { name: 'Retained Earnings A/c', groupName: 'Retained Earnings', openingBalance: 0, balanceType: 'Cr' },
   { name: 'Drawings A/c', groupName: "Owner's Drawings", openingBalance: 0, balanceType: 'Dr' },
 
-  // === 4-01 Direct Income ===
+  // === Direct Income (Sales) ===
   { name: 'Shop Medicine Sales', groupName: 'Medicine Sales', openingBalance: 0, balanceType: 'Cr' },
   { name: 'Online Medicine Sales', groupName: 'Medicine Sales', openingBalance: 0, balanceType: 'Cr' },
   { name: 'Shop Healthcare Sales', groupName: 'Healthcare Product Sales', openingBalance: 0, balanceType: 'Cr' },
@@ -249,22 +282,19 @@ export const DEFAULT_LEDGERS = [
   { name: 'Shop General Sales', groupName: 'General Item Sales', openingBalance: 0, balanceType: 'Cr' },
   { name: 'Online General Sales', groupName: 'General Item Sales', openingBalance: 0, balanceType: 'Cr' },
 
-  // === 4-02 Indirect Income ===
+  // === Indirect Income ===
   { name: 'Delivery Charges Collected', groupName: 'Delivery Income', openingBalance: 0, balanceType: 'Cr' },
   { name: 'Supplier Discount', groupName: 'Discount Received', openingBalance: 0, balanceType: 'Cr' },
   { name: 'Agency Commission', groupName: 'Commission Received', openingBalance: 0, balanceType: 'Cr' },
   { name: 'Miscellaneous Income', groupName: 'Other Income', openingBalance: 0, balanceType: 'Cr' },
 
-  // === 5-01 Cost of Goods Sold ===
+  // === Cost of Goods Sold ===
   { name: 'Medicine Purchase Cost', groupName: 'Purchase of Medicines', openingBalance: 0, balanceType: 'Dr' },
   { name: 'Healthcare Product Purchase Cost', groupName: 'Purchase of Healthcare Products', openingBalance: 0, balanceType: 'Dr' },
   { name: 'General Item Purchase Cost', groupName: 'Purchase of General Items', openingBalance: 0, balanceType: 'Dr' },
   { name: 'Expired Medicine Write-off', groupName: 'Damaged / Expired Stock Loss', openingBalance: 0, balanceType: 'Dr' },
-  { name: 'Courier Charges', groupName: 'Delivery & Packaging Cost', openingBalance: 0, balanceType: 'Dr' },
-  { name: 'Packaging Materials', groupName: 'Delivery & Packaging Cost', openingBalance: 0, balanceType: 'Dr' },
-  { name: 'Rider Fuel Expense', groupName: 'Delivery & Packaging Cost', openingBalance: 0, balanceType: 'Dr' },
 
-  // === 5-02 Indirect Expenses ===
+  // === Indirect Expenses ===
   { name: 'Monthly Shop Rent', groupName: 'Shop Rent', openingBalance: 0, balanceType: 'Dr' },
   { name: 'Electricity Bill', groupName: 'Electricity & Utilities', openingBalance: 0, balanceType: 'Dr' },
   { name: 'Gas Bill', groupName: 'Electricity & Utilities', openingBalance: 0, balanceType: 'Dr' },
@@ -295,8 +325,15 @@ export const DEFAULT_LEDGERS = [
   { name: 'Suspense A/c', groupName: 'Miscellaneous Expenses', openingBalance: 0, balanceType: 'Dr' },
   { name: 'bKash Cash Out Charge', groupName: 'bKash/Nagad Cash Out Charges', openingBalance: 0, balanceType: 'Dr' },
   { name: 'Nagad Cash Out Charge', groupName: 'bKash/Nagad Cash Out Charges', openingBalance: 0, balanceType: 'Dr' },
+  { name: 'Rocket Cash Out Charge', groupName: 'bKash/Nagad Cash Out Charges', openingBalance: 0, balanceType: 'Dr' },
+  { name: 'Upay Cash Out Charge', groupName: 'bKash/Nagad Cash Out Charges', openingBalance: 0, balanceType: 'Dr' },
   { name: 'Sales Discount', groupName: 'Discount Allowed', openingBalance: 0, balanceType: 'Dr' },
-  { name: 'Round Off A/c', groupName: 'Round Off', openingBalance: 0, balanceType: 'Dr' },
+  { name: 'Rounding Income', groupName: 'Round Off', openingBalance: 0, balanceType: 'Cr' },
+  { name: 'Rounding Expense', groupName: 'Round Off', openingBalance: 0, balanceType: 'Dr' },
+  { name: 'Courier Charges', groupName: 'Delivery & Packaging Cost', openingBalance: 0, balanceType: 'Dr' },
+  { name: 'Packaging Materials', groupName: 'Delivery & Packaging Cost', openingBalance: 0, balanceType: 'Dr' },
+  { name: 'Rider Fuel Expense', groupName: 'Delivery & Packaging Cost', openingBalance: 0, balanceType: 'Dr' },
+  { name: 'Cash Shortage/Overage', groupName: 'Cash Shortage / Overage', openingBalance: 0, balanceType: 'Dr' },
 ];
 
 // ============================================================

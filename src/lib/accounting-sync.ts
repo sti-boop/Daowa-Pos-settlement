@@ -81,25 +81,65 @@ function titleCase(s: string): string {
   return (s || '').replace(/\w\S*/g, (t) => t.charAt(0).toUpperCase() + t.slice(1).toLowerCase());
 }
 
-function salesLedgerForProduct(name: string, category?: string, generic?: string): string {
+// Classify a sold item into one of the three revenue/inventory/COGS buckets.
+type ProductKind = 'medicine' | 'healthcare' | 'general';
+
+export function productKind(name?: string, category?: string, generic?: string): ProductKind {
   const n = `${name || ''} ${generic || ''} ${category || ''}`.toLowerCase();
   const cat = (category || '').toLowerCase();
   // Healthcare devices / consumables
-  if (/mask|band|thermometer|saline|ors|glucometer|device|monitor|oximeter|surgical|syringe|glove|diabetic|blood|test kit/.test(n)) {
-    return 'Shop Healthcare Sales';
+  if (/mask|band|thermometer|saline|ors|glucometer|device|monitor|oximeter|surgical|syringe|glove|diabetic|blood|test kit|diaper|wipe/.test(n)) {
+    return 'healthcare';
   }
   // Medicine (clinical) categories
   if (/analgesic|antibiotic|antacid|antihistamine|antidiabetic|diabetes|vitamin|supplement|cough|fever|capsule|tablet|syrup|drops|injection|ointment|cream|antifungal|antiviral|anti.?parasitic|steroid|cardio|gastric|ulcer|pain|allergy|antibacterial/.test(cat)) {
-    return 'Shop Medicine Sales';
+    return 'medicine';
   }
   // Medicine name heuristics
   if (
     /paracetamol|napa|ace|amoxicillin|azithromycin|ciprofloxacin|cetirizine|metformin|omeprazole|seclo|maxpro|losec|omez|vitamin|syrup|tablet|cap|mg/.test(n) &&
     !/savlon|dettol|sanitizer|mask|band|thermometer|diaper|wipe/.test(n)
   ) {
-    return 'Shop Medicine Sales';
+    return 'medicine';
   }
+  return 'general';
+}
+
+// Ledger name for the sales revenue of a product kind
+function salesLedgerForKind(kind: ProductKind): string {
+  if (kind === 'medicine') return 'Shop Medicine Sales';
+  if (kind === 'healthcare') return 'Shop Healthcare Sales';
   return 'Shop General Sales';
+}
+
+// COA group name for a sales revenue ledger (healthcare/general were wrongly
+// filed under 'Medicine Sales' before — now each goes to its own group).
+function groupForRevenueLedger(name: string): string {
+  if (/Healthcare/.test(name)) return 'Healthcare Product Sales';
+  if (/General/.test(name)) return 'General Item Sales';
+  return 'Medicine Sales';
+}
+
+// COGS + inventory ledgers/groups per product kind
+const COGS_LEDGER: Record<ProductKind, string> = {
+  medicine: 'Medicine Purchase Cost',
+  healthcare: 'Healthcare Product Purchase Cost',
+  general: 'General Item Purchase Cost',
+};
+const COGS_GROUP: Record<ProductKind, string> = {
+  medicine: 'Purchase of Medicines',
+  healthcare: 'Purchase of Healthcare Products',
+  general: 'Purchase of General Items',
+};
+const INVENTORY_LEDGER: Record<ProductKind, string> = {
+  medicine: 'Medicine Stock',
+  healthcare: 'Healthcare Products Stock',
+  general: 'General Items Stock',
+};
+const INVENTORY_GROUP = 'Inventory (Stock in Hand)';
+
+function salesLedgerForProduct(name: string, category?: string, generic?: string): string {
+  return salesLedgerForKind(productKind(name, category, generic));
 }
 
 function groupForDebitLedger(name: string): string {
@@ -116,6 +156,26 @@ function groupForDebitLedger(name: string): string {
 
 function round2(n: number) {
   return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
+// Split rounding into Income (customer paid extra → credit) vs Expense
+// (customer paid less → debit), matching the Settlement Hub's two accounts.
+const ROUNDING_INCOME = { ledger: 'Rounding Income', group: 'Round Off', balanceType: 'Cr' };
+const ROUNDING_EXPENSE = { ledger: 'Rounding Expense', group: 'Round Off', balanceType: 'Dr' };
+
+async function pushRoundingAdjustment(
+  push: (ledgerId: string, ledgerName: string, debit: number, credit: number) => void,
+  diff: number,
+) {
+  const d = round2(diff);
+  if (Math.abs(d) <= 0.0001) return;
+  if (d > 0) {
+    const rec = await findOrCreateLedger(ROUNDING_INCOME.ledger, ROUNDING_INCOME.group, ROUNDING_INCOME.balanceType);
+    push(rec.id, rec.name, 0, d);
+  } else {
+    const rec = await findOrCreateLedger(ROUNDING_EXPENSE.ledger, ROUNDING_EXPENSE.group, ROUNDING_EXPENSE.balanceType);
+    push(rec.id, rec.name, -d, 0);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -203,7 +263,90 @@ interface PosSaleForSync {
   createdAt?: Date | string;
 }
 
+// Resolve per-product metadata (category / generic / cost price) once per item.
+interface ResolvedItem {
+  kind: ProductKind;
+  costPrice: number;
+  category?: string;
+  generic?: string;
+}
+
+async function resolveItem(name: string): Promise<ResolvedItem> {
+  try {
+    const p = await posDb.product.findFirst({ where: { name } });
+    return {
+      kind: productKind(name, p?.category, p?.generic),
+      costPrice: Number(p?.costPrice || 0),
+      category: p?.category,
+      generic: p?.generic,
+    };
+  } catch {
+    return { kind: productKind(name), costPrice: 0 };
+  }
+}
+
+// One-time opening-stock posting so inventory ledgers reflect the true stock
+// valuation before COGS begins flowing. Computed as "current POS stock value +
+// cost of sales not yet mirrored into accounting", so it stays consistent no
+// matter whether this runs before or after sales have already synced.
+async function ensureOpeningStock() {
+  const marker = 'OPENING-STOCK';
+  const existing = await accDb.voucher.findFirst({ where: { reference: marker } });
+  if (existing) return;
+
+  const products = await posDb.product.findMany({});
+  const byKind: Record<ProductKind, number> = { medicine: 0, healthcare: 0, general: 0 };
+  for (const p of products) {
+    const cost = Number(p.costPrice || 0) * Number(p.stock || 0);
+    byKind[productKind(p.name, p.category, p.generic)] += cost;
+  }
+
+  // Add back cost of sales not yet posted to accounting (their COGS will be
+  // posted when the sale is synced), so opening + future COGS = current stock.
+  const sales = await posDb.sale.findMany({ include: { saleItems: true } });
+  for (const s of sales) {
+    const mirrored = await accDb.voucher.findFirst({ where: { reference: s.invoiceNo } });
+    if (mirrored) continue;
+    for (const si of s.saleItems || []) {
+      const cost = await posDb.product.findFirst({ where: { name: si.productName } })
+        .then((p) => Number(p?.costPrice || 0) * Number(si.quantity || 0))
+        .catch(() => 0);
+      byKind[productKind(si.productName, undefined, undefined)] += cost;
+    }
+  }
+
+  const total = round2(byKind.medicine + byKind.healthcare + byKind.general);
+  if (total <= 0) return;
+
+  const capital = await findOrCreateLedger("Owner's Capital A/c", "Owner's Capital", 'Cr');
+  const entries: { ledgerId: string; ledgerName: string; debit: number; credit: number }[] = [];
+  for (const kind of ['medicine', 'healthcare', 'general'] as ProductKind[]) {
+    const value = round2(byKind[kind]);
+    if (value <= 0) continue;
+    const inv = await findOrCreateLedger(INVENTORY_LEDGER[kind], INVENTORY_GROUP, 'Dr');
+    entries.push({ ledgerId: inv.id, ledgerName: inv.name, debit: value, credit: 0 });
+  }
+  entries.push({ ledgerId: capital.id, ledgerName: capital.name, debit: 0, credit: total });
+
+  const journalType = await findOrCreateVoucherType('Journal', 'JV');
+  const voucherNumber = await nextVoucherNumber('JV');
+  await accDb.voucher.create({
+    data: {
+      voucherNumber,
+      reference: marker,
+      date: new Date().toISOString().split('T')[0],
+      voucherTypeId: journalType.id,
+      narration: 'Opening inventory valuation (auto from POS stock)',
+      totalAmount: total,
+      entries: { create: entries },
+    },
+  });
+}
+
 async function syncPosSaleToAccountingImpl(sale: PosSaleForSync) {
+  // Post opening inventory once before any COGS flows.
+  await ensureOpeningStock();
+
   const salesType = await findOrCreateVoucherType('Sales', 'SV');
   const today = new Date().toISOString().split('T')[0];
 
@@ -273,27 +416,19 @@ async function syncPosSaleToAccountingImpl(sale: PosSaleForSync) {
   const catTotals: Record<string, number> = {};
   const items = sale.saleItems || [];
   for (const item of items) {
-    let category: string | undefined;
-    let generic: string | undefined;
-    try {
-      const p = await posDb.product.findFirst({ where: { name: item.productName } });
-      category = p?.category;
-      generic = p?.generic;
-    } catch {
-      /* ignore */
-    }
-    const ledgerName = salesLedgerForProduct(item.productName, category, generic);
+    const resolved = await resolveItem(item.productName);
+    const ledgerName = salesLedgerForKind(resolved.kind);
     catTotals[ledgerName] = (catTotals[ledgerName] || 0) + Number(item.subtotal || 0);
   }
   const totalCatSubtotal = Object.values(catTotals).reduce((a, b) => a + b, 0);
 
   for (const [ledgerName, sub] of Object.entries(catTotals)) {
     const share = totalCatSubtotal > 0 ? productAmount * (sub / totalCatSubtotal) : productAmount;
-    const ledger = await findOrCreateLedger(ledgerName, 'Medicine Sales', 'Cr');
+    const ledger = await findOrCreateLedger(ledgerName, groupForRevenueLedger(ledgerName), 'Cr');
     push(ledger.id, ledger.name, 0, share);
   }
   if (Object.keys(catTotals).length === 0) {
-    const revenueLedger = await findOrCreateLedger('Shop General Sales', 'Medicine Sales', 'Cr');
+    const revenueLedger = await findOrCreateLedger('Shop General Sales', 'General Item Sales', 'Cr');
     push(revenueLedger.id, revenueLedger.name, 0, productAmount);
   }
 
@@ -302,15 +437,26 @@ async function syncPosSaleToAccountingImpl(sale: PosSaleForSync) {
     push(deliveryLedger.id, deliveryLedger.name, 0, deliveryIncome);
   }
 
-  // --- Force balance via Round Off account (rounding adjustments)
+  // --- COGS + inventory relief (matching concept: sold goods leave inventory
+  // at cost and become Cost of Goods Sold). Returns reverse this later.
+  const cogsTotals: Record<ProductKind, number> = { medicine: 0, healthcare: 0, general: 0 };
+  for (const item of items) {
+    const resolved = await resolveItem(item.productName);
+    cogsTotals[resolved.kind] += resolved.costPrice * Number(item.quantity || 0);
+  }
+  for (const kind of ['medicine', 'healthcare', 'general'] as ProductKind[]) {
+    const cost = round2(cogsTotals[kind]);
+    if (cost <= 0) continue;
+    const cogsLedger = await findOrCreateLedger(COGS_LEDGER[kind], COGS_GROUP[kind], 'Dr');
+    const invLedger = await findOrCreateLedger(INVENTORY_LEDGER[kind], INVENTORY_GROUP, 'Dr');
+    push(cogsLedger.id, cogsLedger.name, cost, 0);
+    push(invLedger.id, invLedger.name, 0, cost);
+  }
+
+  // --- Force balance via Rounding Income / Rounding Expense accounts
   const totalDebit = entries.reduce((s, e) => s + e.debit, 0);
   const totalCredit = entries.reduce((s, e) => s + e.credit, 0);
-  const diff = round2(totalDebit - totalCredit);
-  if (Math.abs(diff) > 0.0001) {
-    const roundOff = await findOrCreateLedger('Round Off A/c', 'Round Off', diff >= 0 ? 'Cr' : 'Dr');
-    if (diff > 0) push(roundOff.id, roundOff.name, 0, diff);
-    else push(roundOff.id, roundOff.name, -diff, 0);
-  }
+  await pushRoundingAdjustment(push, totalDebit - totalCredit);
 
   // --- Create the voucher (sequential accounting numbering, reference = POS invoice)
   const voucherNumber = await nextVoucherNumber('SV');
@@ -394,22 +540,26 @@ async function syncPosReturnToAccountingImpl(sale: any, returnItems: { productNa
 
   // Debit: reverse the revenue (split by product category)
   const catTotals: Record<string, number> = {};
+  const cogsTotals: Record<ProductKind, number> = { medicine: 0, healthcare: 0, general: 0 };
   for (const item of returnItems) {
-    let category: string | undefined;
-    let generic: string | undefined;
-    try {
-      const p = await posDb.product.findFirst({ where: { name: item.productName } });
-      category = p?.category;
-      generic = p?.generic;
-    } catch {
-      /* ignore */
-    }
-    const ledgerName = salesLedgerForProduct(item.productName, category, generic);
+    const resolved = await resolveItem(item.productName);
+    const ledgerName = salesLedgerForKind(resolved.kind);
     catTotals[ledgerName] = (catTotals[ledgerName] || 0) + Number(item.refundAmount || 0);
+    cogsTotals[resolved.kind] += resolved.costPrice * Number(item.quantity || 0);
   }
   for (const [ledgerName, amt] of Object.entries(catTotals)) {
-    const ledger = await findOrCreateLedger(ledgerName, 'Medicine Sales', 'Cr');
+    const ledger = await findOrCreateLedger(ledgerName, groupForRevenueLedger(ledgerName), 'Cr');
     push(ledger.id, ledger.name, amt, 0);
+  }
+
+  // Re-stock inventory and reverse COGS for the returned goods (at cost).
+  for (const kind of ['medicine', 'healthcare', 'general'] as ProductKind[]) {
+    const cost = round2(cogsTotals[kind]);
+    if (cost <= 0) continue;
+    const invLedger = await findOrCreateLedger(INVENTORY_LEDGER[kind], INVENTORY_GROUP, 'Dr');
+    const cogsLedger = await findOrCreateLedger(COGS_LEDGER[kind], COGS_GROUP[kind], 'Dr');
+    push(invLedger.id, invLedger.name, cost, 0);
+    push(cogsLedger.id, cogsLedger.name, 0, cost);
   }
 
   // Credit: refund back through the original payment channel
@@ -421,15 +571,10 @@ async function syncPosReturnToAccountingImpl(sale: any, returnItems: { productNa
   const refundLedger = await findOrCreateLedger(refundLedgerName, groupForDebitLedger(refundLedgerName));
   push(refundLedger.id, refundLedger.name, 0, totalRefund);
 
-  // Balance via Round Off
+  // Balance via Rounding Income / Rounding Expense
   const totalDebit = entries.reduce((s, e) => s + e.debit, 0);
   const totalCredit = entries.reduce((s, e) => s + e.credit, 0);
-  const diff = round2(totalDebit - totalCredit);
-  if (Math.abs(diff) > 0.0001) {
-    const roundOff = await findOrCreateLedger('Round Off A/c', 'Round Off', diff >= 0 ? 'Cr' : 'Dr');
-    if (diff > 0) push(roundOff.id, roundOff.name, 0, diff);
-    else push(roundOff.id, roundOff.name, -diff, 0);
-  }
+  await pushRoundingAdjustment(push, totalDebit - totalCredit);
 
   const voucherNumber = await nextVoucherNumber('CNV');
   const voucher = await accDb.voucher.create({
@@ -497,19 +642,43 @@ const SETTLEMENT_LEDGER_MAP: Record<string, { ledger: string; group: string }> =
   'Medicine Inventory Asset A/c': { ledger: 'Medicine Stock', group: 'Inventory (Stock in Hand)' },
   'Medicine Sales Revenue A/c': { ledger: 'Shop Medicine Sales', group: 'Medicine Sales' },
   'Delivery Fee Revenue A/c': { ledger: 'Delivery Charges Collected', group: 'Delivery Income' },
-  'Courier Expense A/c': { ledger: 'Courier Charges', group: 'Courier & Delivery Charges' },
+  'Courier Expense A/c': { ledger: 'Courier Charges', group: 'Delivery & Packaging Cost' },
   'MFS Charge Expense A/c': { ledger: 'bKash Cash Out Charge', group: 'bKash/Nagad Cash Out Charges' },
-  'Card Gateway Expense A/c': { ledger: 'Bank Charges', group: 'Bank Charges' },
-  'Cash Shortage/Overage Expense A/c': { ledger: 'Cash Shortage/Overage', group: 'Miscellaneous Expenses' },
-  'Rounding Income A/c': { ledger: 'Round Off A/c', group: 'Round Off' },
-  'Rounding Expense A/c': { ledger: 'Round Off A/c', group: 'Round Off' },
+  'Card Gateway Expense A/c': { ledger: 'Bank Charges', group: 'Bank Charges & Interest' },
+  'Cash Shortage/Overage Expense A/c': { ledger: 'Cash Shortage/Overage', group: 'Cash Shortage / Overage' },
+  'Rounding Income A/c': { ledger: 'Rounding Income', group: 'Round Off' },
+  'Rounding Expense A/c': { ledger: 'Rounding Expense', group: 'Round Off' },
 };
 
-function ledgerForSettlementAccount(accountName: string): { ledger: string; group: string } {
+// Detect which MFS provider a settlement journal belongs to, so the cash-out
+// charge lands on the correct provider ledger (bKash/Nagad/Rocket/Upay).
+function mfsProviderFromContext(context?: string): string | null {
+  const text = (context || '').toLowerCase();
+  const match = /(bkash|nagad|rocket|upay)/.exec(text);
+  return match ? match[1] : null;
+}
+
+const MFS_DISPLAY_NAMES: Record<string, string> = {
+  bkash: 'bKash',
+  nagad: 'Nagad',
+  rocket: 'Rocket',
+  upay: 'Upay',
+};
+
+function ledgerForSettlementAccount(accountName: string, context?: string): { ledger: string; group: string } {
+  // Provider-aware MFS charge: "Settle bKash to Bank" → bKash Cash Out Charge.
+  if (accountName === 'MFS Charge Expense A/c') {
+    const provider = mfsProviderFromContext(context);
+    if (provider) {
+      const name = MFS_DISPLAY_NAMES[provider] || provider;
+      return { ledger: `${name} Cash Out Charge`, group: 'bKash/Nagad Cash Out Charges' };
+    }
+  }
   const mapped = SETTLEMENT_LEDGER_MAP[accountName];
   if (mapped) return mapped;
   // Fallback: reuse the settlement account name, guess group by account kind.
   if (/Clearing A\/c/.test(accountName)) return { ledger: accountName, group: 'Clearing Accounts' };
+  if (/^Customer - /.test(accountName)) return { ledger: accountName, group: 'Receivables (Money to Receive)' };
   if (/Expense/.test(accountName)) return { ledger: accountName, group: 'Miscellaneous Expenses' };
   if (/Revenue|Sales|Income/.test(accountName)) return { ledger: accountName, group: 'Medicine Sales' };
   if (/Bank/.test(accountName)) return { ledger: accountName, group: 'Cash at Bank' };
@@ -545,7 +714,7 @@ async function syncSettlementPostingsToAccountingImpl(entry: {
     const debit = Number(p.debit || 0);
     const credit = Number(p.credit || 0);
     if (debit === 0 && credit === 0) continue;
-    const { ledger, group } = ledgerForSettlementAccount(p.accountName);
+    const { ledger, group } = ledgerForSettlementAccount(p.accountName, `${entry.userAction || ''} ${entry.narration || ''}`);
     const rec = await findOrCreateLedger(ledger, group, debit > 0 ? 'Dr' : 'Cr');
     push(rec.id, rec.name, debit, credit);
   }
@@ -553,12 +722,7 @@ async function syncSettlementPostingsToAccountingImpl(entry: {
   // Force balance (should already balance, but guard against float drift)
   const totalDebit = entries.reduce((s, e) => s + e.debit, 0);
   const totalCredit = entries.reduce((s, e) => s + e.credit, 0);
-  const diff = round2(totalDebit - totalCredit);
-  if (Math.abs(diff) > 0.0001) {
-    const roundOff = await findOrCreateLedger('Round Off A/c', 'Round Off', diff >= 0 ? 'Cr' : 'Dr');
-    if (diff > 0) push(roundOff.id, roundOff.name, 0, diff);
-    else push(roundOff.id, roundOff.name, -diff, 0);
-  }
+  await pushRoundingAdjustment(push, totalDebit - totalCredit);
 
   const voucherNumber = await nextVoucherNumber('JV');
   const voucher = await accDb.voucher.create({

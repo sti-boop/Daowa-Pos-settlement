@@ -16,6 +16,11 @@ import { StockGroupsPage } from '@/components/accounting/stock/StockGroupsPage';
 import { StockItemsPage } from '@/components/accounting/stock/StockItemsPage';
 import { useAppStore } from '@/lib/accounting-store';
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts';
+import { ReceivablesPage } from '@/components/accounting/receivables/ReceivablesPage';
+import { FixedAssetsPage } from '@/components/accounting/fixed-assets/FixedAssetsPage';
+import { PurchasesPage } from '@/components/accounting/purchases/PurchasesPage';
+import { BankReconciliationPage } from '@/components/accounting/bank/BankReconciliationPage';
+import { YearEndPage } from '@/components/accounting/year-end/YearEndPage';
 
 /**
  * The Accounting module's content — rendered inline inside the single-app shell
@@ -68,6 +73,11 @@ export default function AccountingContent() {
       case 'audit': return <AuditLogPage />;
       case 'stock-groups': return <StockGroupsPage />;
       case 'stock-items': return <StockItemsPage />;
+      case 'receivables': return <ReceivablesPage />;
+      case 'fixed-assets': return <FixedAssetsPage />;
+      case 'purchases': return <PurchasesPage />;
+      case 'bank-reconciliation': return <BankReconciliationPage />;
+      case 'year-end': return <YearEndPage />;
       default: return <Dashboard />;
     }
   };

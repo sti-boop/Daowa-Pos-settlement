@@ -181,6 +181,12 @@ export async function POST(req: NextRequest) {
       netBankDeposit = grossAmount;
       bankReference = `DUE-CLR-${Math.floor(1000 + Math.random() * 9000)}`;
 
+      // Per-customer receivable ledger (matches the SV posting at sale time).
+      const arAccount =
+        order.customerName && order.customerName !== 'Walk-in Customer'
+          ? `Customer - ${order.customerName}`
+          : 'Customer Accounts Receivable';
+
       // Debit POS Cash Holding (cash received from customer) / Credit AR
       // Support partial settlement: if settlementAmount is provided, settle only that amount
       const fullDue = (order as any).dueAmount || grossAmount;
@@ -188,7 +194,7 @@ export async function POST(req: NextRequest) {
       const remainingDue = fullDue - dueToSettle;
       
       postings.push({ accountName: 'POS Cash Holding A/c', debit: dueToSettle, credit: 0 });
-      postings.push({ accountName: 'Customer Accounts Receivable', debit: 0, credit: dueToSettle });
+      postings.push({ accountName: arAccount, debit: 0, credit: dueToSettle });
 
       // Update order due amount
       (order as any).dueAmount = remainingDue;
@@ -210,8 +216,12 @@ export async function POST(req: NextRequest) {
 
       // If the order was originally a Due sale, clear the AR balance with the cash received.
       if (order.paymentMethod === 'due') {
+        const arAccount =
+          order.customerName && order.customerName !== 'Walk-in Customer'
+            ? `Customer - ${order.customerName}`
+            : 'Customer Accounts Receivable';
         postings.push({ accountName: 'POS Cash Holding A/c', debit: grossAmount, credit: 0 });
-        postings.push({ accountName: 'Customer Accounts Receivable', debit: 0, credit: grossAmount });
+        postings.push({ accountName: arAccount, debit: 0, credit: grossAmount });
       } else if (
         accounts['Customer Accounts Receivable'] &&
         accounts['Customer Accounts Receivable'].balance > 0

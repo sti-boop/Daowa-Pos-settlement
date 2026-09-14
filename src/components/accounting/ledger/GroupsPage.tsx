@@ -46,7 +46,7 @@ const NATURE_META: Record<string, { icon: React.ReactNode; range: string }> = {
 };
 const CLASSIFICATION_OPTIONS = ['Balance Sheet', 'Profit & Loss'];
 const SUB_CATEGORY_OPTIONS = [
-  'Current', 'Long-Term', 'Bank', 'Cash', 'Inventory',
+  'Current', 'Long-Term', 'Bank', 'Cash', 'Inventory', 'Clearing',
   'Fixed Asset', 'Equipment', 'Fixtures',
   'Payables', 'Taxes', 'Accrued', 'Loans',
   'Equity', 'Capital', 'Earnings', 'Drawings',

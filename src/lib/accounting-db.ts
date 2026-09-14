@@ -59,6 +59,8 @@ interface Store {
   stockItems: Map<string, any>;
   stockTransactions: Map<string, any>;
   auditLogs: Map<string, any>;
+  fixedAssets: Map<string, any>;
+  bankReconciliations: Map<string, any>;
   // implicit m2m: recurringJournal <-> voucher
   rjVouchers: Map<string, Set<string>>; // recurringJournalId -> voucherIds
   seeded: boolean;
@@ -78,6 +80,8 @@ function createStore(): Store {
     stockItems: new Map(),
     stockTransactions: new Map(),
     auditLogs: new Map(),
+    fixedAssets: new Map(),
+    bankReconciliations: new Map(),
     rjVouchers: new Map(),
     seeded: false,
   };
@@ -201,7 +205,8 @@ function seedIfEmpty(store: Store) {
 type ModelName =
   | 'company' | 'ledgerGroup' | 'ledger' | 'voucherType' | 'voucher'
   | 'voucherEntry' | 'recurringJournal' | 'recurringEntry' | 'stockGroup'
-  | 'stockItem' | 'stockTransaction' | 'auditLog';
+  | 'stockItem' | 'stockTransaction' | 'auditLog' | 'fixedAsset'
+  | 'bankReconciliation';
 
 function rel(model: ModelName, key: string, rec: any, store: Store): any[] | any {
   const arr = <T,>(m: Map<string, T>) => Array.from(m.values());
@@ -534,6 +539,8 @@ function modelStore(store: Store, model: ModelName): Map<string, any> {
     stockItem: store.stockItems,
     stockTransaction: store.stockTransactions,
     auditLog: store.auditLogs,
+    fixedAsset: store.fixedAssets,
+    bankReconciliation: store.bankReconciliations,
   };
   return map[model];
 }
@@ -595,6 +602,7 @@ function makeHandler(model: ModelName, store: Store, opts?: { idPrefix?: string 
         createdAt: data.createdAt ? toDate(data.createdAt) : new Date(),
         updatedAt: new Date(),
       };
+      if (model === 'ledger' && rec.isActive === undefined) rec.isActive = true;
       if (data.createdAt) rec.createdAt = toDate(data.createdAt);
       if (data.updatedAt) rec.updatedAt = toDate(data.updatedAt);
       mstore.set(rec.id, rec);
@@ -862,6 +870,8 @@ function buildProxy(store: Store) {
     stockItem: base('stockItem', { idPrefix: 'si' }),
     stockTransaction: base('stockTransaction', { idPrefix: 'stk' }),
     auditLog: base('auditLog', { idPrefix: 'al' }),
+    fixedAsset: base('fixedAsset', { idPrefix: 'fa' }),
+    bankReconciliation: base('bankReconciliation', { idPrefix: 'br' }),
     $transaction: async (fnOrArray: any) => {
       if (typeof fnOrArray === 'function') return fnOrArray(proxy);
       if (Array.isArray(fnOrArray)) return Promise.all(fnOrArray);
@@ -879,7 +889,16 @@ function buildProxy(store: Store) {
 export const db: any = buildProxy(getAccountingStore());
 
 export function resetAccountingDB() {
-  delete globalStore.__daowa_accounting_store;
+  const store = getAccountingStore();
+  // Clear every collection in place so the already-built `db` proxy (which
+  // closes over this store object) immediately sees fresh, empty data.
+  for (const key of Object.keys(store)) {
+    const v = (store as any)[key];
+    if (v instanceof Map) v.clear();
+    else if (v instanceof Set) v.clear();
+  }
+  store.seeded = false;
+  seedIfEmpty(store);
 }
 
 export function getAccountingDb(): any {
