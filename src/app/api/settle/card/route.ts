@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
     const { provider = 'Visa / Mastercard', operator = 'Tanvir Ahmed', bankAccountId } = body;
 
     const cardOrders = orders.filter(
-      (o) => o.paymentMethod.startsWith('card_') && o.status === 'delivered_pending_payout'
+      (o) => (o.paymentMethod === 'card' || o.paymentMethod.startsWith('card_')) && o.status === 'delivered_pending_payout'
     );
 
     if (cardOrders.length === 0) {

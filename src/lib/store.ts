@@ -197,6 +197,13 @@ export function postAuditJournalEntry(
   };
 
   auditJournal.unshift(entry);
+
+  // Mirror this settlement posting into the Accounting module as a Journal
+  // voucher (fire-and-forget — the accounting store lives in the same process).
+  import('./accounting-sync')
+    .then(({ syncSettlementPostingsToAccounting }) => syncSettlementPostingsToAccounting(entry))
+    .catch((e) => console.error('Accounting settlement sync failed:', e));
+
   return entry;
 }
 

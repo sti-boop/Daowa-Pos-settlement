@@ -6,7 +6,6 @@ import {
   AlertCircle,
   Pill,
   X,
-  ArrowLeft,
 } from 'lucide-react';
 import {
   HealthcareOrder,
@@ -32,14 +31,15 @@ interface ToastMessage {
 }
 
 interface SettlementHubOverlayProps {
-  onClose: () => void;
+  onClose?: () => void;
+  initialTab?: 'settlement' | 'eod' | 'returns' | 'fees';
 }
 
-export default function SettlementHubOverlay({ onClose }: SettlementHubOverlayProps) {
+export default function SettlementHubOverlay({ initialTab = 'settlement' }: SettlementHubOverlayProps) {
   const [overview, setOverview] = useState<OverviewData | null>(null);
   const [orders, setOrders] = useState<HealthcareOrder[]>([]);
   const [fees, setFees] = useState<SystemFeeSettings | null>(null);
-  const [activeTab, setActiveTab] = useState<'settlement' | 'eod' | 'returns' | 'fees'>('settlement');
+  const [activeTab, setActiveTab] = useState<'settlement' | 'eod' | 'returns' | 'fees'>(initialTab);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [lastClosedShift, setLastClosedShift] = useState<EodRegisterShift | null>(null);
@@ -85,18 +85,14 @@ export default function SettlementHubOverlay({ onClose }: SettlementHubOverlayPr
 
   return (
     <div className="min-h-screen bg-[#FCF2E5]/40 text-[#524646] flex flex-col font-sans">
-      {/* Close button to return to POS */}
+      {/* Brand bar (module navigation lives in the shared left sidebar) */}
       <div className="sticky top-0 z-40 bg-white border-b border-gray-200 shadow-sm px-4 py-2.5 flex items-center justify-between">
-        <button
-          onClick={onClose}
-          className="flex items-center gap-2 text-sm font-bold text-gray-700 hover:text-[#2D9F73] transition"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span>Back to POS</span>
-        </button>
-        <div className="flex items-center gap-2 text-xs text-gray-500">
+        <div className="flex items-center gap-2 text-sm font-bold text-gray-700">
           <Pill className="w-4 h-4 text-[#2D9F73]" />
-          <span className="font-bold">Daowa.net Settlement Hub &amp; EOD Cashier Portal</span>
+          <span>Daowa.net Settlement Hub &amp; EOD Cashier Portal</span>
+        </div>
+        <div className="flex items-center gap-2 text-xs text-gray-500">
+          <span className="font-bold">Settlement Hub</span>
         </div>
       </div>
 

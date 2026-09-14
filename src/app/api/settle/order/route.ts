@@ -30,7 +30,7 @@ function resolveDefaultMethod(order: any): SettlementMethod {
   if (isMfsMethod(order.paymentMethod)) return 'mfs';
   if (order.deliveryType === 'third_party_courier') return 'courier';
   if (order.deliveryType === 'own_rider') return 'rider';
-  if (order.paymentMethod.startsWith('card_')) return 'card';
+  if (order.paymentMethod === 'card' || order.paymentMethod.startsWith('card_')) return 'card';
   if (order.paymentMethod === 'due') return 'due';
   return 'cash';
 }

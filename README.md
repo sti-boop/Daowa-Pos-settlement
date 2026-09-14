@@ -2,6 +2,11 @@
 
 A complete, production-ready Point of Sale system for pharmacies and healthcare retail, featuring an integrated Settlement Hub with double-entry accounting, EOD cash register, courier/rider/MFS/card settlements, and much more.
 
+> **New — Integrated Accounting System.** This repository now also ships the full
+> **Daowa Accounting** app (double-entry ledger, vouchers, reports, stock, recurring
+> journals, audit trail) merged in, with **live two-way sync** to the POS. See
+> [Integrated Accounting System](#integrated-accounting-system) below.
+
 ## Features
 
 ### POS (Point of Sale)
@@ -40,6 +45,46 @@ A complete, production-ready Point of Sale system for pharmacies and healthcare 
 - Rounding Income/Expense accounts
 - Cash Shortage/Overage tracking
 - 100% balanced ledger verification
+
+## Integrated Accounting System
+
+The Daowa Accounting app (from `sti-boop/daowa-accounting-github`) is fully integrated into
+this application and available at **`/accounting`** (there is an **Accounting** button in the
+POS header, and a **Back to POS** link in the Accounting sidebar).
+
+**Full sync** between POS and Accounting happens automatically:
+
+- Every POS sale is mirrored as a balanced **Sales voucher** (double-entry) in Accounting —
+  Cash → `Counter Cash`, bKash/Nagad/Rocket → clearing ledgers with **fee expense** split,
+  Card → `City Bank` + bank charges, Due → a per-customer receivable ledger, COD → courier
+  receivable, Split → one entry per method.
+- Every sale line is recorded as a **stock Outward** transaction against an Accounting stock item.
+- POS **products** are synced to Accounting stock items/groups; POS **customers** become
+  receivable ledgers.
+- The Accounting dashboard **inventory value** is kept in sync with POS stock valuation.
+
+**Sync endpoints:**
+
+- `POST /api/accounting/sync` — full sync (catalog + historical sales) and returns a summary.
+- `GET /api/accounting/sync` — current sync status (ledger/voucher counts, inventory value).
+- `POST /api/accounting-seed` — (re)seed the accounting chart of accounts.
+
+**Accounting features** (all available at `/accounting`):
+
+- Company setup, Chart of Accounts (groups & ledgers), voucher types
+- Double-entry vouchers (create/edit/delete with balancing validation)
+- Recurring journals (daily/weekly/monthly…, execute-on-demand)
+- Reports: trial balance, P&L, balance sheet, day book, ledger report, sales/purchase
+  register, stock summary, VAT report (with PDF export)
+- Stock groups/items with inward/outward tracking
+- Full audit trail
+
+> **Data layer note.** In this sandbox the native Prisma engine binaries cannot be downloaded
+> (`binaries.prisma.sh` is unreachable), so the accounting API runs on a bundled in-memory
+> Prisma-compatible engine (`src/lib/accounting-db.ts`) that auto-seeds the chart of accounts.
+> Because POS and Accounting share one process, they share this store — which is what enables
+> live sync. On a normal network, `npx prisma db push` + the bundled `prisma/schema.prisma`
+> will back the same routes with real SQLite/PostgreSQL.
 
 ## Tech Stack
 

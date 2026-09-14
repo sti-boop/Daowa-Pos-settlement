@@ -8,6 +8,7 @@ const nextConfig: NextConfig = {
   reactStrictMode: false,
   allowedDevOrigins: [
     "*.run.app",
+    "*.e2b.app",
     "ais-dev-jfmzvs4yr45kcjwrulobzf-429633149903.asia-southeast1.run.app",
     "ais-pre-jfmzvs4yr45kcjwrulobzf-429633149903.asia-southeast1.run.app",
     "localhost:3000",

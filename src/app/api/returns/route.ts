@@ -185,6 +185,24 @@ export async function POST(request: NextRequest) {
       return created
     })
 
+    // Sync the return to the Accounting system (Credit Note + stock inward)
+    try {
+      const { syncPosReturnToAccounting } = await import('@/lib/accounting-sync')
+      await syncPosReturnToAccounting(
+        sale,
+        items.map((item) => ({
+          productName: item.productName,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          refundAmount: item.refundAmount,
+        })),
+        totalRefund,
+        reason
+      )
+    } catch (accErr) {
+      console.error('Accounting return sync failed (non-fatal):', accErr)
+    }
+
     return NextResponse.json(
       {
         success: true,

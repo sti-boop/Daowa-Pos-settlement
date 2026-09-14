@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { processSaleJournal, validateJournalBalance } from '@/lib/accounting/transaction-processor'
 import { syncSaleToSettlementHub } from '@/lib/store'
+import { syncPosSaleToAccounting } from '@/lib/accounting-sync'
 
 function getDaySummary(date: Date) {
   const start = new Date(date)
@@ -645,6 +646,38 @@ export async function POST(request: NextRequest) {
       })
     } catch (syncErr) {
       console.error('Settlement Hub sync failed (non-fatal):', syncErr)
+    }
+
+    // Sync the sale to the Accounting system (double-entry mirror)
+    try {
+      await syncPosSaleToAccounting({
+        id: sale.id,
+        invoiceNo: sale.invoiceNo,
+        customerId: sale.customerId,
+        customerName: sale.customer?.name,
+        subtotal: sale.subtotal,
+        totalDiscount: sale.totalDiscount,
+        deliveryCharge: sale.deliveryCharge,
+        grandTotal: sale.grandTotal,
+        paymentMethod: sale.paymentMethod,
+        receivedAmount: sale.receivedAmount,
+        dueAmount: sale.dueAmount,
+        isDelivery: sale.isDelivery,
+        deliveryPartnerCode: body.isDelivery ? body.deliveryPartnerCode : undefined,
+        saleItems: sale.saleItems.map((si: any) => ({
+          productName: si.productName,
+          quantity: si.quantity,
+          unitPrice: si.unitPrice,
+          subtotal: si.subtotal,
+        })),
+        splitPayments: sale.splitPayments?.map((sp: any) => ({
+          method: sp.method,
+          amount: sp.amount,
+        })),
+        createdAt: sale.createdAt,
+      })
+    } catch (accSyncErr) {
+      console.error('Accounting sync failed (non-fatal):', accSyncErr)
     }
 
     return NextResponse.json({ ...sale, earnedPoints }, { status: 201 })

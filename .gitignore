@@ -67,3 +67,5 @@ server.log
 prompt
 # Worklog
 worklog.md
+# Generated app package (download artifact)
+public/*.zip

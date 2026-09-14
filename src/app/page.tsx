@@ -8,26 +8,26 @@ import DiscountSection from '@/components/pos/DiscountSection';
 import PaymentSection from '@/components/pos/PaymentSection';
 import RoundOffSection from '@/components/pos/RoundOffSection';
 import TotalsPanel from '@/components/pos/TotalsPanel';
-import HoldOrders from '@/components/pos/HoldOrders';
 import KeyboardShortcuts from '@/components/pos/KeyboardShortcuts';
+import AppSidebar, { ModuleKey, SettlementTab } from '@/components/pos/AppSidebar';
 import SaleNote from '@/components/pos/SaleNote';
 import SaleConfirmation from '@/components/pos/SaleConfirmation';
 import DeliveryOrderSection from '@/components/pos/DeliveryOrderSection';
+import AccountingContent from '@/components/accounting/AccountingContent';
 
 const SalesAnalytics = lazy(() => import('@/components/pos/SalesAnalytics').then(m => ({ default: m.default })));
 const ProductManager = lazy(() => import('@/components/pos/ProductManager').then(m => ({ default: m.default })));
 const DailyReport = lazy(() => import('@/components/pos/DailyReport').then(m => ({ default: m.default })));
 
 import {
-  RotateCcw, Receipt, CalendarDays, Package,
-  BarChart3, Copy, Check,
+  Receipt, CalendarDays, Copy, Check,
   Printer, Pause, Star, X, MessageSquare, Loader2,
-  ShieldCheck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { usePosStore } from '@/store/pos-store';
 import { useHydrated } from '@/hooks/use-hydrated';
 import { apiFetch } from '@/lib/api-client';
+import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
@@ -41,6 +41,7 @@ import {
   CodIcon,
 } from '@/components/pos/PaymentIcons';
 import SettlementHubOverlay from '@/components/daowa/SettlementHubOverlay';
+import { useAppStore } from '@/lib/accounting-store';
 
 const PAYMENT_METHOD_CONFIG: Record<string, { color: string; icon: React.ReactNode }> = {
   cash: { color: 'bg-[#2D9F73]/15 text-[#2D9F73]', icon: <CashIcon className="h-4 w-4" /> },
@@ -82,7 +83,9 @@ export default function Home() {
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [showProducts, setShowProducts] = useState(false);
   const [showReport, setShowReport] = useState(false);
-  const [showSettlementHub, setShowSettlementHub] = useState(false);
+  const [activeModule, setActiveModule] = useState<ModuleKey>('pos');
+  const [settlementTab, setSettlementTab] = useState<SettlementTab>('settlement');
+  const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const [showSuccessDialog, setShowSuccessDialog] = useState(false);
   const [lastInvoiceNo, setLastInvoiceNo] = useState('');
   const [copiedReceipt, setCopiedReceipt] = useState(false);
@@ -115,6 +118,44 @@ export default function Home() {
   const totalItems = cartItems.reduce((sum, i) => sum + i.quantity, 0);
 
   const handleClear = () => { clearCart(); toast.success('POS cleared'); };
+
+  const navigate = (module: ModuleKey, opts?: { tab?: SettlementTab; view?: string }) => {
+    setActiveModule(module);
+    if (module === 'settlement' && opts?.tab) setSettlementTab(opts.tab);
+    if (module === 'accounting' && opts?.view) useAppStore.getState().setView(opts.view as any);
+  };
+
+  const handleFocusNewSale = () => {
+    setTimeout(() => {
+      productInputRef.current?.focus();
+      productInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 50);
+  };
+
+  const handleResumeHold = (items: any[]) => {
+    setTimeout(() => {
+      usePosStore.getState().replaceCart(items.map((item: any) => ({
+        id: crypto.randomUUID(),
+        productId: item.productId,
+        productName: item.productName,
+        unitPrice: item.unitPrice,
+        originalPrice: item.originalPrice || item.unitPrice,
+        quantity: item.quantity,
+        unit: item.unit,
+        barcode: item.barcode,
+        itemDiscount: item.itemDiscount || 0,
+        itemDiscountType: item.itemDiscountType || 'percentage',
+        subtotal: item.subtotal || (item.unitPrice * item.quantity),
+        overridden: item.overridden ?? false,
+        stock: item.stock ?? 0,
+        category: item.category ?? '',
+        generic: item.generic ?? '',
+        costPrice: item.costPrice,
+        expiryDate: item.expiryDate,
+      })));
+      toast.success('Order resumed');
+    }, 0);
+  };
 
   const handleCompleteSale = useCallback(() => {
     if (cartItems.length === 0) { toast.error('Cart is empty. Add products to continue.'); return; }
@@ -165,8 +206,7 @@ export default function Home() {
     }
     // WARN: over-margin discounts (allow to proceed)
     if (overMarginItems.length > 0) {
-      toast.warning(`⚠️ Discount exceeds profit margin on:
-${overMarginItems.join('\n')}`);
+      toast.warning(`⚠️ Discount exceeds profit margin on:\n${overMarginItems.join('\n')}`);
     }
     // WARN: expiring products (allow to proceed)
     if (expiringItems.length > 0) {
@@ -245,21 +285,7 @@ ${overMarginItems.join('\n')}`);
       d.change > 0 ? `<div style="display:flex;justify-content:space-between;padding:1px 0"><span>Change:</span><span>৳${d.change.toFixed(2)}</span></div>` : '',
       d.due > 0 ? `<div style="display:flex;justify-content:space-between;padding:1px 0"><span>Due:</span><span>৳${d.due.toFixed(2)}</span></div>` : '',
     ].filter(Boolean).join('');
-    const html = `<!DOCTYPE html><html><head><title>Receipt ${lastInvoiceNo}</title><style>@page{size:80mm auto;margin:2mm}body{margin:0;padding:4mm;font-family:'Courier New',Courier,monospace;font-size:10px;color:#000;width:80mm}</style></head><body>
-<div style="text-align:center;margin-bottom:4px"><div style="font-size:14px;font-weight:bold">DAOWA POS</div></div>
-<div style="border-top:1px dashed #000;border-bottom:1px dashed #000;padding:3px 0;margin:4px 0">
-<div style="display:flex;justify-content:space-between"><span>Invoice: ${lastInvoiceNo}</span><span>${d.time}</span></div>
-<div>Customer: ${d.customerName}${d.customerPhone ? ` (${d.customerPhone})` : ''}</div>
-</div>
-<table style="width:100%;border-collapse:collapse;margin:4px 0">
-<thead><tr style="border-bottom:1px dashed #000"><th style="text-align:left;padding:2px 0;font-size:9px">Item</th><th style="text-align:center;padding:2px 0;font-size:9px">Qty</th><th style="text-align:right;padding:2px 0;font-size:9px">Amount</th></tr></thead>
-<tbody>${itemRows}</tbody>
-</table>
-<div style="border-top:2px solid #000;border-bottom:2px solid #000;padding:4px 0;margin:4px 0;text-align:center"><div style="font-size:12px;font-weight:bold">TOTAL: ৳${d.total.toFixed(2)}</div></div>
-<div style="margin:4px 0">${paymentRows}</div>
-<div style="text-align:center;margin-top:6px;font-size:9px"><div style="font-weight:bold">Thank you for your purchase!</div></div>
-<script>window.onload=function(){window.print();window.onafterprint=function(){window.close()}}</script>
-</body></html>`;
+    const html = `<!DOCTYPE html><html><head><title>Receipt ${lastInvoiceNo}</title><style>@page{size:80mm auto;margin:2mm}body{margin:0;padding:4mm;font-family:'Courier New',Courier,monospace;font-size:10px;color:#000;width:80mm}</style></head><body>\n<div style="text-align:center;margin-bottom:4px"><div style="font-size:14px;font-weight:bold">DAOWA POS</div></div>\n<div style="border-top:1px dashed #000;border-bottom:1px dashed #000;padding:3px 0;margin:4px 0">\n<div style="display:flex;justify-content:space-between"><span>Invoice: ${lastInvoiceNo}</span><span>${d.time}</span></div>\n<div>Customer: ${d.customerName}${d.customerPhone ? ` (${d.customerPhone})` : ''}</div>\n</div>\n<table style="width:100%;border-collapse:collapse;margin:4px 0">\n<thead><tr style="border-bottom:1px dashed #000"><th style="text-align:left;padding:2px 0;font-size:9px">Item</th><th style="text-align:center;padding:2px 0;font-size:9px">Qty</th><th style="text-align:right;padding:2px 0;font-size:9px">Amount</th></tr></thead>\n<tbody>${itemRows}</tbody>\n</table>\n<div style="border-top:2px solid #000;border-bottom:2px solid #000;padding:4px 0;margin:4px 0;text-align:center"><div style="font-size:12px;font-weight:bold">TOTAL: ৳${d.total.toFixed(2)}</div></div>\n<div style="margin:4px 0">${paymentRows}</div>\n<div style="text-align:center;margin-top:6px;font-size:9px"><div style="font-weight:bold">Thank you for your purchase!</div></div>\n<script>window.onload=function(){window.print();window.onafterprint=function(){window.close()}}</script>\n</body></html>`;
     const w = window.open('', '_blank', 'width=320,height=600');
     if (w) { w.document.write(html); w.document.close(); }
     else { toast.error('Pop-up blocked. Please allow pop-ups for printing.'); }
@@ -351,116 +377,129 @@ ${overMarginItems.join('\n')}`);
   const paymentConfig = PAYMENT_METHOD_CONFIG[successData.payment] || PAYMENT_METHOD_CONFIG.cash;
 
   return (
-    <div className="min-h-screen bg-white bg-pattern flex flex-col">
-      {/* Header */}
-      <header className="header-gradient sticky top-0 z-40 relative">
-        <div className="top-gradient-bar" />
-        <div className="max-w-[1440px] mx-auto px-3 md:px-4 lg:px-6 py-2 md:py-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-[11px] text-gray-400">
-              <span className="flex items-center gap-1">
-                <CalendarDays className="h-3 w-3" />
-                {currentTime?.toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short' }) || '...'}
-              </span>
-              <span className="text-gray-200">|</span>
-              <span className="font-mono font-semibold tabular-nums tracking-wider text-gray-500 digital-clock">
-                {currentTime?.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true }) || '--:--:--'}
-              </span>
-            </div>
-            <div className="flex items-center gap-1.5 md:gap-2">
-              <button onClick={() => setShowProducts(true)} className="flex items-center gap-1.5 bg-[#3FB98C]/10 text-[#3FB98C] rounded-full px-2.5 py-1 hover:bg-[#3FB98C]/20 transition-colors" title="Product Manager">
-                <Package className="h-3 w-3" /><span className="text-xs font-semibold hidden sm:inline">Products</span>
-              </button>
-              <button onClick={() => setShowAnalytics(true)} className="flex items-center gap-1.5 bg-[#3FB98C]/10 text-[#3FB98C] rounded-full px-2.5 py-1 hover:bg-[#3FB98C]/20 transition-colors" title="Sales Analytics">
-                <BarChart3 className="h-3 w-3" /><span className="text-xs font-semibold hidden sm:inline">Analytics</span>
-              </button>
-              <button onClick={() => setShowSettlementHub(true)} className="flex items-center gap-1.5 bg-[#3FB98C]/10 text-[#3FB98C] rounded-full px-2.5 py-1 hover:bg-[#3FB98C]/20 transition-colors" title="Settlement Hub — MFS, Courier, Rider & Card settlements, EOD cash register, returns, fees">
-                <ShieldCheck className="h-3 w-3" /><span className="text-xs font-semibold hidden sm:inline">Settlement Hub</span>
-              </button>
-              <HoldOrders onResume={(items) => { setTimeout(() => { usePosStore.getState().replaceCart(items.map((item: any) => ({ id: crypto.randomUUID(), productId: item.productId, productName: item.productName, unitPrice: item.unitPrice, originalPrice: item.originalPrice || item.unitPrice, quantity: item.quantity, unit: item.unit, barcode: item.barcode, itemDiscount: item.itemDiscount || 0, itemDiscountType: item.itemDiscountType || 'percentage', subtotal: item.subtotal || (item.unitPrice * item.quantity), overridden: item.overridden ?? false, stock: item.stock ?? 0, category: item.category ?? '', generic: item.generic ?? '', costPrice: item.costPrice, expiryDate: item.expiryDate, }))); toast.success('Order resumed'); }, 0); }} />
-              {cartItems.length > 0 && (
-                <div className="bg-gray-100 rounded-lg px-2 py-1 md:px-3 md:py-1.5 flex items-center gap-1.5 md:gap-2">
-                  <Receipt className="h-3 w-3 md:h-3.5 md:w-3.5 text-gray-500" />
-                  <span className="text-xs md:text-sm font-semibold text-gray-700">{cartItems.length} items ({totalItems})</span>
-                  <span className="text-gray-300 hidden sm:inline">|</span>
-                  <span className="text-xs md:text-sm font-bold text-[#3FB98C]">৳{grandTotal.toFixed(2)}</span>
-                </div>
-              )}
-              {cartItems.length > 0 && (
-                <Button variant="ghost" size="sm" onClick={handleClear} className="rounded-xl text-gray-400 hover:text-red-500 hover:bg-red-50">
-                  <RotateCcw className="h-3.5 w-3.5 mr-1.5" />Clear
-                </Button>
-              )}
-            </div>
-          </div>
-        </div>
-      </header>
+    <div className="h-screen overflow-hidden flex flex-col">
+      {/* Single shared left sidebar for the whole app */}
+      <AppSidebar
+        expanded={sidebarExpanded}
+        onToggle={() => setSidebarExpanded((v) => !v)}
+        activeModule={activeModule}
+        onNavigate={navigate}
+        onOpenProducts={() => { setActiveModule('pos'); setShowProducts(true); }}
+        onOpenAnalytics={() => { setActiveModule('pos'); setShowAnalytics(true); }}
+        onOpenReport={() => { setActiveModule('pos'); setShowAnalytics(false); setShowReport(true); }}
+        onFocusNewSale={() => { setActiveModule('pos'); handleFocusNewSale(); }}
+        onResumeHold={handleResumeHold}
+        onClearCart={handleClear}
+        cartItemsCount={cartItems.length}
+        totalItems={totalItems}
+        grandTotal={grandTotal}
+      />
 
-      {/* Main Content */}
-      <main className="flex-1 max-w-[1440px] w-full mx-auto p-3 md:p-4 lg:p-6 relative z-[1]">
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-3 md:gap-4">
-          {/* Left Panel */}
-          <div className="md:col-span-8 space-y-3 md:space-y-4">
-            <div className="space-y-3 overflow-visible">
-              <div className="grid grid-cols-12 gap-3 overflow-visible items-start">
-                <div className="col-span-12 md:col-span-8 overflow-visible"><CustomerSection inputRef={customerInputRef} /></div>
-                <div className="col-span-12 md:col-span-4"><DiscountSection /></div>
-              </div>
-              <div className="overflow-visible"><ProductSearch inputRef={productInputRef} /></div>
-            </div>
-            <div><CartTable /></div>
-          </div>
-
-          {/* Right Panel */}
-          <div className="md:col-span-4 space-y-3 md:space-y-4 md:max-h-[calc(100vh-80px)] md:overflow-y-auto md:pr-1 smooth-scroll">
-            <div><PaymentSection /></div>
-            <div><RoundOffSection /></div>
-            <div><SaleNote /></div>
-            <div><TotalsPanel /></div>
-            <div><DeliveryOrderSection /></div>
-            <div className="flex flex-col md:flex-row gap-2 md:gap-3 pt-1">
-              <div className="flex gap-2">
-                <Button onClick={handleHoldSale} disabled={cartItems.length === 0} className="flex-1 h-10 rounded-xl neu-btn btn-3d-press card-hover-lift border border-amber-200/80 bg-amber-50 text-amber-700 hover:bg-amber-100 hover:text-amber-800 font-semibold text-xs ripple-btn">
-                  <Pause className="h-3.5 w-3.5 mr-1 text-amber-700" />Hold
-                </Button>
-                <Button onClick={handleDiscard} disabled={cartItems.length === 0 || completing} className="flex-1 h-10 rounded-xl neu-btn btn-3d-press card-hover-lift border border-red-200/80 bg-red-50 text-red-600 hover:text-red-700 hover:bg-red-100 hover:border-red-300 font-semibold text-xs ripple-btn">
-                  Discard
-                </Button>
-              </div>
-              <button
-                onClick={handleCompleteSale}
-                disabled={cartItems.length === 0 || completing}
-                className="complete-sale-shiny relative w-full md:flex-[2] h-12 rounded-xl overflow-hidden text-white font-bold text-sm shadow-lg shadow-[#3FB98C]/40 tabular-nums ripple-btn disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none transition-all hover:shadow-xl hover:shadow-[#3FB98C]/50 active:scale-[0.98]"
-              >
-                <span className="relative z-10 flex items-center justify-center gap-1.5">
-                  {completing ? (
-                    <div className="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  ) : (<>
-                    <Receipt className="h-4 w-4" />
-                    Complete Sale — ৳{grandTotal.toFixed(2)}
-                  </>)}
+      <div className={cn('flex h-full flex-col transition-[padding-left] duration-300', sidebarExpanded ? 'pl-64' : 'pl-[68px]')}>
+        {/* App top bar */}
+        <header className="header-gradient sticky top-0 z-40 relative shrink-0">
+          <div className="top-gradient-bar" />
+          <div className="max-w-[1600px] mx-auto px-3 md:px-4 lg:px-6 py-2 md:py-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-[11px] text-gray-400">
+                <span className="flex items-center gap-1">
+                  <CalendarDays className="h-3 w-3" />
+                  {currentTime?.toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short' }) || '...'}
                 </span>
-                {/* Shimmer sweep */}
-                <span className="shimmer-sweep absolute inset-0 z-0 pointer-events-none" aria-hidden="true" />
-              </button>
+                <span className="text-gray-200">|</span>
+                <span className="font-mono font-semibold tabular-nums tracking-wider text-gray-500 digital-clock">
+                  {currentTime?.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true }) || '--:--:--'}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 text-xs font-semibold text-[#2D9F73]">
+                <span className="relative flex h-2 w-2">
+                  <span className="connection-dot absolute inline-flex h-full w-full rounded-full bg-[#2D9F73]/40 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-[#2D9F73]/50" />
+                </span>
+                <span className="hidden sm:inline">Live · POS &amp; Accounting synced</span>
+              </div>
             </div>
           </div>
-        </div>
-      </main>
+        </header>
 
-      {/* Footer */}
-      <footer className="mt-auto py-2 px-3 md:px-4 border-t border-gray-200/50 bg-white/30 backdrop-blur-sm footer-gradient-border footer-pulse-line relative z-[1]">
-        <div className="footer-watermark text-gray-400" aria-hidden="true" />
-        <div className="max-w-[1440px] mx-auto flex items-center justify-between text-xs text-gray-400">
-          <span className="flex items-center gap-2">
-            <span className="relative flex h-2 w-2">
-              <span className="connection-dot absolute inline-flex h-full w-full rounded-full bg-[#2D9F73]/40 opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-[#2D9F73]/50" />
-            </span>
-            <span className="font-medium text-gray-500">Daowa POS</span>
-          </span>
-        </div>
-      </footer>
+        {/* Module content */}
+        <main className="flex-1 overflow-y-auto relative z-[1]">
+          {activeModule === 'pos' && (
+            <div className="min-h-full bg-white bg-pattern flex flex-col">
+              <div className="flex-1 max-w-[1440px] w-full mx-auto p-3 md:p-4 lg:p-6">
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-3 md:gap-4">
+                  {/* Left Panel */}
+                  <div className="md:col-span-8 space-y-3 md:space-y-4">
+                    <div className="space-y-3 overflow-visible">
+                      <div className="grid grid-cols-12 gap-3 overflow-visible items-start">
+                        <div className="col-span-12 md:col-span-8 overflow-visible"><CustomerSection inputRef={customerInputRef} /></div>
+                        <div className="col-span-12 md:col-span-4"><DiscountSection /></div>
+                      </div>
+                      <div className="overflow-visible"><ProductSearch inputRef={productInputRef} /></div>
+                    </div>
+                    <div><CartTable /></div>
+                  </div>
+
+                  {/* Right Panel */}
+                  <div className="md:col-span-4 space-y-3 md:space-y-4 md:max-h-[calc(100vh-80px)] md:overflow-y-auto md:pr-1 smooth-scroll">
+                    <div><PaymentSection /></div>
+                    <div><RoundOffSection /></div>
+                    <div><SaleNote /></div>
+                    <div><TotalsPanel /></div>
+                    <div><DeliveryOrderSection /></div>
+                    <div className="flex flex-col md:flex-row gap-2 md:gap-3 pt-1">
+                      <div className="flex gap-2">
+                        <Button onClick={handleHoldSale} disabled={cartItems.length === 0} className="flex-1 h-10 rounded-xl neu-btn btn-3d-press card-hover-lift border border-amber-200/80 bg-amber-50 text-amber-700 hover:bg-amber-100 hover:text-amber-800 font-semibold text-xs ripple-btn">
+                          <Pause className="h-3.5 w-3.5 mr-1 text-amber-700" />Hold
+                        </Button>
+                        <Button onClick={handleDiscard} disabled={cartItems.length === 0 || completing} className="flex-1 h-10 rounded-xl neu-btn btn-3d-press card-hover-lift border border-red-200/80 bg-red-50 text-red-600 hover:text-red-700 hover:bg-red-100 hover:border-red-300 font-semibold text-xs ripple-btn">
+                          Discard
+                        </Button>
+                      </div>
+                      <button
+                        onClick={handleCompleteSale}
+                        disabled={cartItems.length === 0 || completing}
+                        className="complete-sale-shiny relative w-full md:flex-[2] h-12 rounded-xl overflow-hidden text-white font-bold text-sm shadow-lg shadow-[#3FB98C]/40 tabular-nums ripple-btn disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none transition-all hover:shadow-xl hover:shadow-[#3FB98C]/50 active:scale-[0.98]"
+                      >
+                        <span className="relative z-10 flex items-center justify-center gap-1.5">
+                          {completing ? (
+                            <div className="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                          ) : (<>
+                            <Receipt className="h-4 w-4" />
+                            Complete Sale — ৳{grandTotal.toFixed(2)}
+                          </>)}
+                        </span>
+                        {/* Shimmer sweep */}
+                        <span className="shimmer-sweep absolute inset-0 z-0 pointer-events-none" aria-hidden="true" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer (POS module) */}
+              <footer className="mt-auto py-2 px-3 md:px-4 border-t border-gray-200/50 bg-white/30 backdrop-blur-sm footer-gradient-border footer-pulse-line relative z-[1]">
+                <div className="footer-watermark text-gray-400" aria-hidden="true" />
+                <div className="max-w-[1440px] mx-auto flex items-center justify-between text-xs text-gray-400">
+                  <span className="flex items-center gap-2">
+                    <span className="relative flex h-2 w-2">
+                      <span className="connection-dot absolute inline-flex h-full w-full rounded-full bg-[#2D9F73]/40 opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-[#2D9F73]/50" />
+                    </span>
+                    <span className="font-medium text-gray-500">Daowa</span>
+                  </span>
+                </div>
+              </footer>
+            </div>
+          )}
+
+          {activeModule === 'settlement' && (
+            <SettlementHubOverlay key={settlementTab} initialTab={settlementTab} onClose={() => setActiveModule('pos')} />
+          )}
+
+          {activeModule === 'accounting' && <AccountingContent />}
+        </main>
+      </div>
 
       {/* Success Dialog */}
       <AnimatePresence>
@@ -611,19 +650,12 @@ ${overMarginItems.join('\n')}`);
         <SaleConfirmation customer={customer ? { name: customer.name, phone: customer.phone, address: customer.address } : null} items={cartItems.map((item) => ({ productName: item.productName, quantity: item.quantity, unit: item.unit, unitPrice: item.unitPrice, itemDiscount: item.itemDiscount, itemDiscountType: item.itemDiscountType, subtotal: item.subtotal }))} subtotal={getSubtotal()} totalDiscount={getTotalDiscount()} deliveryCharge={deliveryCharge} roundingAdjust={getRoundingAdjustment()} grandTotal={grandTotal} paymentMethod={paymentMethod} receivedAmount={paymentMethod === 'split' ? splitPayments.reduce((sum, sp) => sum + sp.amount, 0) : receivedAmount} changeAmount={changeAmount} dueAmount={dueAmount} splitPayments={splitPayments.map((sp) => ({ method: sp.method, amount: sp.amount }))} saleNote={saleNote || undefined} onConfirm={executeSale} onCancel={() => setShowConfirmation(false)} loading={completing} />
       )}
 
-      {/* Lazy-loaded Sheets */}
+      {/* Lazy-loaded Sheets (overlays — work from any module) */}
       <Suspense fallback={null}><SalesAnalytics open={showAnalytics} onClose={() => setShowAnalytics(false)} onGenerateReport={() => { setShowAnalytics(false); setShowReport(true); }} /></Suspense>
       <Suspense fallback={null}><ProductManager open={showProducts} onClose={() => setShowProducts(false)} /></Suspense>
       <Suspense fallback={null}><DailyReport open={showReport} onClose={() => setShowReport(false)} /></Suspense>
 
-      {/* Settlement Hub — full-screen overlay with the Daowa Settlement Hub */}
-      {showSettlementHub && (
-        <div className="fixed inset-0 z-50 bg-[#FCF2E5] overflow-y-auto">
-          <SettlementHubOverlay onClose={() => setShowSettlementHub(false)} />
-        </div>
-      )}
-
-      <KeyboardShortcuts />
+      {activeModule === 'pos' && <KeyboardShortcuts />}
     </div>
   );
 }

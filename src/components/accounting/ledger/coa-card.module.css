@@ -1,0 +1,213 @@
+/* COA Nature KPI Cards — matches main dashboard KPI card design (compact light-shaded glassmorphism)
+   Colors: light shades of the original COA nature colors
+   (Asset #4169E1, Liability #F59E0B, Equity #8B5CF6, Income #10B981, Expense #EE1127) */
+
+.kpiCard {
+  border-radius: 16px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 95px;
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+  transform-style: preserve-3d;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  transition: transform 0.15s cubic-bezier(0.2, 0, 0.4, 1), box-shadow 0.3s ease;
+
+  /* Ultra-Glass Border & Multi-layered 3D Depth Shadows (identical to main KPI cards) */
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  box-shadow:
+    0 8px 20px rgba(0, 0, 0, 0.25),
+    inset 0 1px 2px rgba(255, 255, 255, 0.9),
+    inset 0 -1px 3px rgba(0, 0, 0, 0.08);
+}
+
+/* Dynamic Cursor Light Reflection (Gleam) — identical to main KPI cards */
+.kpiCard::before {
+  content: '';
+  position: absolute;
+  top: var(--mouse-y, 50%);
+  left: var(--mouse-x, 50%);
+  width: 140px;
+  height: 140px;
+  background: radial-gradient(circle, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0) 70%);
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+  mix-blend-mode: overlay;
+  z-index: 2;
+}
+
+.kpiCard:hover::before {
+  opacity: 1;
+}
+
+/* Enhanced Ambient Glass Glow on Hover — identical to main KPI cards */
+.kpiCard:hover {
+  box-shadow:
+    0 14px 28px -6px var(--glow-color, rgba(255, 255, 255, 0.4)),
+    0 8px 12px -6px rgba(0, 0, 0, 0.3),
+    inset 0 2px 4px rgba(255, 255, 255, 0.95);
+}
+
+/* Card Contents pushed out in 3D Space — identical to main KPI cards */
+.cardHeader,
+.cardBody {
+  position: relative;
+  z-index: 3;
+  transform: translateZ(16px);
+  transition: transform 0.3s ease;
+}
+
+.cardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.cardTitle {
+  font-size: 11px;
+  font-weight: 400;
+  color: #0f172a;
+  line-height: 1.2;
+}
+
+/* 3D Glass Floating Icon Badge — identical to main KPI cards */
+.iconBadge {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--icon-color, #0f172a);
+  flex-shrink: 0;
+  transform: translateZ(22px);
+  box-shadow:
+    0 4px 8px rgba(0, 0, 0, 0.08),
+    inset 0 1px 2px rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+}
+
+.cardBody {
+  margin-top: 10px;
+}
+
+.cardValue {
+  font-size: 16px;
+  font-weight: 400;
+  color: #0f172a;
+  letter-spacing: -0.3px;
+  line-height: 1;
+  margin-bottom: 2px;
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.6);
+  display: inline-block;
+}
+
+.cardSubtitle {
+  font-size: 9.5px;
+  font-weight: 400;
+  color: #475569;
+}
+
+/* Code range chip under the value */
+.codeRange {
+  display: inline-block;
+  margin-top: 3px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.9);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: var(--icon-color, #475569);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ----------------------------------------------------
+   LIGHT SHADES OF THE ORIGINAL COA NATURE COLORS
+---------------------------------------------------- */
+
+/* 1. Asset — light shades of Royal Blue #4169E1 */
+.bgAsset {
+  background: linear-gradient(135deg, rgba(219, 234, 254, 0.85) 0%, rgba(191, 219, 254, 0.85) 50%, rgba(147, 197, 253, 0.85) 100%);
+  --glow-color: rgba(147, 197, 253, 0.6);
+  --icon-color: #1D4ED8;
+  --active-ring: rgba(65, 105, 225, 0.55);
+}
+
+/* 2. Liability — light shades of Amber #F59E0B */
+.bgLiability {
+  background: linear-gradient(135deg, rgba(254, 243, 199, 0.85) 0%, rgba(253, 230, 138, 0.85) 50%, rgba(252, 211, 77, 0.85) 100%);
+  --glow-color: rgba(252, 211, 77, 0.6);
+  --icon-color: #B45309;
+  --active-ring: rgba(245, 158, 11, 0.55);
+}
+
+/* 3. Equity — light shades of Violet #8B5CF6 */
+.bgEquity {
+  background: linear-gradient(135deg, rgba(237, 233, 254, 0.85) 0%, rgba(221, 214, 254, 0.85) 50%, rgba(196, 181, 253, 0.85) 100%);
+  --glow-color: rgba(196, 181, 253, 0.6);
+  --icon-color: #6D28D9;
+  --active-ring: rgba(139, 92, 246, 0.55);
+}
+
+/* 4. Income — light shades of Emerald #10B981 */
+.bgIncome {
+  background: linear-gradient(135deg, rgba(209, 250, 229, 0.85) 0%, rgba(167, 243, 208, 0.85) 50%, rgba(110, 231, 183, 0.85) 100%);
+  --glow-color: rgba(110, 231, 183, 0.6);
+  --icon-color: #047857;
+  --active-ring: rgba(16, 185, 129, 0.55);
+}
+
+/* 5. Expense — light shades of Red #EE1127 */
+.bgExpense {
+  background: linear-gradient(135deg, rgba(254, 226, 226, 0.85) 0%, rgba(254, 202, 202, 0.85) 50%, rgba(252, 165, 165, 0.85) 100%);
+  --glow-color: rgba(252, 165, 165, 0.6);
+  --icon-color: #B91C1C;
+  --active-ring: rgba(238, 17, 39, 0.5);
+}
+
+/* Grid layout */
+.cardGrid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 1024px) {
+  .cardGrid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .cardGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 420px) {
+  .cardGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Active (filtered) state — nature-colored glass ring */
+.kpiCardActive {
+  outline: 2.5px solid var(--active-ring, rgba(15, 23, 42, 0.35));
+  outline-offset: 2px;
+  box-shadow:
+    0 12px 24px -6px var(--glow-color, rgba(255, 255, 255, 0.5)),
+    inset 0 2px 4px rgba(255, 255, 255, 0.95);
+}

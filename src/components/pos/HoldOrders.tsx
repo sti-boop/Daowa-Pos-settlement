@@ -39,9 +39,11 @@ interface HoldOrder {
 
 interface HoldOrdersProps {
   onResume: (items: CartItem[]) => void;
+  triggerClassName?: string;
+  labelClassName?: string;
 }
 
-export default function HoldOrders({ onResume }: HoldOrdersProps) {
+export default function HoldOrders({ onResume, triggerClassName, labelClassName }: HoldOrdersProps) {
   const [open, setOpen] = useState(false);
   const [orders, setOrders] = useState<HoldOrder[]>([]);
   const [loading, setLoading] = useState(false);
@@ -163,9 +165,9 @@ export default function HoldOrders({ onResume }: HoldOrdersProps) {
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
-        <button className="flex items-center gap-1.5 bg-amber-50 text-amber-700 rounded-full px-2.5 py-1 hover:bg-amber-100 transition-colors" title="Held Orders">
+        <button className={triggerClassName || "flex items-center gap-1.5 bg-amber-50 text-amber-700 rounded-full px-2.5 py-1 hover:bg-amber-100 transition-colors"} title="Held Orders">
           <Pause className="h-3 w-3 text-amber-700" />
-          <span className="text-xs font-semibold hidden sm:inline">On Hold</span>
+          <span className={labelClassName || 'text-xs font-semibold hidden sm:inline'}>On Hold</span>
           <span className={`text-[9px] font-bold rounded-full h-4 min-w-4 px-1.5 flex items-center justify-center transition-all ${heldOrdersCount > 0 ? 'bg-amber-600 text-white' : 'bg-amber-200/70 text-amber-800'}`}>
             {heldOrdersCount}
           </span>
